@@ -45,10 +45,17 @@ jobs:
       # Delta deploy
       - name: "Delta deploy"
         run: |
-          sf sgd source delta --to "HEAD" --from "origin/main" --output "." -i .forceignore
+          sf sgd source delta --to "HEAD" --from "origin/main" --output-dir "." -i .forceignore
           echo "--- package.xml generated with added and modified metadata ---"
           cat package/package.xml
           echo
+
+          HAS_TYPES=$(xq . < package/package.xml | jq 'has("Package") and (.Package | has("types"))' -r)
+          if [ "$HAS_TYPES" != "true" ]; then
+            echo "No metadata changes detected in delta. Skipping deployment."
+            exit 0
+          fi
+
           echo "--- Apex Class Presence Check ---"
           export APEX_CLASSES=$(xq . < package/package.xml | jq '.Package.types | [.] | flatten | map(select(.name=="ApexClass")) | .[] | .members | [.] | flatten | map(select(. | index("*") | not)) | unique | join(" ")' -r)
           echo $APEX_CLASSES
@@ -63,4 +70,3 @@ jobs:
             else
               sf project deploy start --dry-run -x package/package.xml -w 30
             fi
-          #sf project deploy start --dry-run -x package/package.xml
