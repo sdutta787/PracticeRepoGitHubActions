@@ -5,14 +5,14 @@
 # Calculates the next package version number based on existing released versions.
 #
 # Version format: Major.Minor.Patch.Build
-# - Major.Minor are inherited from the latest released version
+# - Minor is auto-incremented from the latest released version
 # - Patch is always 0 (patch versioning requires Salesforce support enablement)
 # - Build uses NEXT to auto-increment
 #
 # Usage:
 #   ./scripts/calculate-version.sh <package_id> <devhub_username>
 #
-# Output: Version number string (e.g., "1.0.0.NEXT")
+# Output: Version number string (e.g., "1.1.0.NEXT")
 # =============================================================================
 
 set -euo pipefail
@@ -31,20 +31,21 @@ releaseListJSON=$(sf package version list \
   --order-by CreatedDate \
   --json 2>/dev/null)
 
-packageVersionListResultArrayLastItemVersion=$(echo "$releaseListJSON" | jq -r '.result[-1].Version // empty')
+latestVersion=$(echo "$releaseListJSON" | jq -r '.result[-1].Version // empty')
 
-if [ -z "$packageVersionListResultArrayLastItemVersion" ]; then
-  echo "No existing versions found. Starting from 1.0.0.NEXT" >&2
+if [ -z "$latestVersion" ]; then
+  echo "No existing released versions found. Starting from 1.0.0.NEXT" >&2
   echo "1.0.0.NEXT"
   exit 0
 fi
 
-echo "Latest Released Version: $packageVersionListResultArrayLastItemVersion" >&2
+echo "Latest Released Version: $latestVersion" >&2
 
-MAJOR=$(echo "$packageVersionListResultArrayLastItemVersion" | jq -rR 'split(".")[0]')
-MINOR=$(echo "$packageVersionListResultArrayLastItemVersion" | jq -rR 'split(".")[1]')
+MAJOR=$(echo "$latestVersion" | jq -rR 'split(".")[0]')
+MINOR=$(echo "$latestVersion" | jq -rR 'split(".")[1]')
 
-newVersion="${MAJOR}.${MINOR}.0.NEXT"
+NEXT_MINOR=$((MINOR + 1))
+newVersion="${MAJOR}.${NEXT_MINOR}.0.NEXT"
 
-echo "Calculated Version: $newVersion" >&2
+echo "Next Version: $newVersion" >&2
 echo "$newVersion"
