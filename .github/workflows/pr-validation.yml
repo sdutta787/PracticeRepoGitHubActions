@@ -1,0 +1,147 @@
+name: PR Validation - Apex Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "force-app/**"
+
+env:
+  SF_AUTOUPDATE_DISABLE: true
+  SF_USE_GENERIC_UNIX_KEYCHAIN: true
+  DEVHUB_USERNAME: ${{ vars.SF_DEVHUB_USERNAME }}
+
+jobs:
+  apex-validation:
+    name: Delta Apex Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.16.0"
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install @salesforce/cli -g
+          sf --version
+
+      - name: Authenticate to DevHub
+        env:
+          SALESFORCE_JWT_KEY: ${{ secrets.SF_JWT_KEY }}
+          SALESFORCE_CONSUMER_KEY: ${{ secrets.SF_CONSUMER_KEY }}
+          SALESFORCE_DEVHUB_URL: ${{ vars.SF_DEVHUB_URL }}
+        run: |
+          echo "$SALESFORCE_JWT_KEY" > ./server.key
+          chmod 600 ./server.key
+          sf org login jwt \
+            --username "$DEVHUB_USERNAME" \
+            --client-id "$SALESFORCE_CONSUMER_KEY" \
+            --jwt-key-file ./server.key \
+            --instance-url "$SALESFORCE_DEVHUB_URL" \
+            --set-default-dev-hub \
+            --alias DevHub
+          rm -f ./server.key
+
+      - name: Install sfdx-git-delta (SGD) plugin
+        run: |
+          echo "y" | sf plugins install sfdx-git-delta
+          sf plugins --core
+
+      - name: Generate delta package
+        id: sgd
+        run: |
+          echo "Generating delta between origin/${{ github.base_ref }} and HEAD..."
+
+          mkdir -p delta
+
+          sf sgd:source:delta \
+            --from "origin/${{ github.base_ref }}" \
+            --to HEAD \
+            --output delta \
+            --generate-delta
+
+          echo "=== Delta package.xml ==="
+          if [ -f "delta/package/package.xml" ]; then
+            cat delta/package/package.xml
+            echo "has_delta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Apex changes detected in delta."
+            echo "has_delta=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Identify Apex test classes from delta
+        if: ${{ steps.sgd.outputs.has_delta == 'true' }}
+        id: find_tests
+        run: |
+          TEST_CLASSES=""
+
+          if [ -d "delta/force-app/main/default/classes" ]; then
+            for cls_file in delta/force-app/main/default/classes/*Test*.cls delta/force-app/main/default/classes/*_Test.cls; do
+              if [ -f "$cls_file" ]; then
+                CLASS_NAME=$(basename "$cls_file" .cls)
+                if [ -n "$TEST_CLASSES" ]; then
+                  TEST_CLASSES="${TEST_CLASSES},${CLASS_NAME}"
+                else
+                  TEST_CLASSES="${CLASS_NAME}"
+                fi
+              fi
+            done
+          fi
+
+          if [ -z "$TEST_CLASSES" ]; then
+            echo "No test classes in delta. Scanning for related tests..."
+
+            for cls_file in delta/force-app/main/default/classes/*.cls 2>/dev/null; do
+              [ -f "$cls_file" ] || continue
+              CLASS_NAME=$(basename "$cls_file" .cls)
+
+              for test_pattern in "${CLASS_NAME}Test" "${CLASS_NAME}_Test" "Test${CLASS_NAME}"; do
+                if [ -f "force-app/main/default/classes/${test_pattern}.cls" ]; then
+                  if [ -n "$TEST_CLASSES" ]; then
+                    TEST_CLASSES="${TEST_CLASSES},${test_pattern}"
+                  else
+                    TEST_CLASSES="${test_pattern}"
+                  fi
+                fi
+              done
+            done
+          fi
+
+          TEST_CLASSES=$(echo "$TEST_CLASSES" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+
+          echo "test_classes=$TEST_CLASSES" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$TEST_CLASSES" ]; then
+            echo "has_tests=true" >> "$GITHUB_OUTPUT"
+            echo "Apex test classes to run: $TEST_CLASSES"
+          else
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
+            echo "No related Apex test classes found. Skipping test run."
+          fi
+
+      - name: Run Apex tests
+        if: ${{ steps.find_tests.outputs.has_tests == 'true' }}
+        run: |
+          TEST_CLASSES="${{ steps.find_tests.outputs.test_classes }}"
+          echo "Running Apex tests: $TEST_CLASSES"
+
+          sf project deploy start \
+            --manifest delta/package/package.xml \
+            --target-org DevHub \
+            --dry-run \
+            --test-level RunSpecifiedTests \
+            --tests "$TEST_CLASSES" \
+            --wait 30
+
+          echo "All Apex tests passed."
+
+      - name: No tests to run
+        if: ${{ steps.sgd.outputs.has_delta != 'true' || steps.find_tests.outputs.has_tests != 'true' }}
+        run: echo "No Apex changes or related test classes found. Validation skipped."
