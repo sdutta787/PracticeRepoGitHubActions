@@ -140,17 +140,16 @@ jobs:
         if: ${{ github.event.inputs.skip_apex_tests != 'true' && steps.sgd.outputs.has_delta == 'true' }}
         id: find_tests
         run: |
+          shopt -s nullglob
           TEST_CLASSES=""
 
           if [ -d "delta/force-app/main/default/classes" ]; then
             for cls_file in delta/force-app/main/default/classes/*Test*.cls delta/force-app/main/default/classes/*_Test.cls; do
-              if [ -f "$cls_file" ]; then
-                CLASS_NAME=$(basename "$cls_file" .cls)
-                if [ -n "$TEST_CLASSES" ]; then
-                  TEST_CLASSES="${TEST_CLASSES},${CLASS_NAME}"
-                else
-                  TEST_CLASSES="${CLASS_NAME}"
-                fi
+              CLASS_NAME=$(basename "$cls_file" .cls)
+              if [ -n "$TEST_CLASSES" ]; then
+                TEST_CLASSES="${TEST_CLASSES},${CLASS_NAME}"
+              else
+                TEST_CLASSES="${CLASS_NAME}"
               fi
             done
           fi
@@ -158,8 +157,7 @@ jobs:
           if [ -z "$TEST_CLASSES" ]; then
             echo "No Apex test classes found in delta. Scanning for related tests..."
 
-            for cls_file in delta/force-app/main/default/classes/*.cls 2>/dev/null; do
-              [ -f "$cls_file" ] || continue
+            for cls_file in delta/force-app/main/default/classes/*.cls; do
               CLASS_NAME=$(basename "$cls_file" .cls)
 
               for test_pattern in "${CLASS_NAME}Test" "${CLASS_NAME}_Test" "Test${CLASS_NAME}"; do
