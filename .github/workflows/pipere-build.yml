@@ -8,11 +8,11 @@ on:
         required: false
         type: boolean
         default: false
-      target_org_alias:
-        description: "Target QA org alias for installation"
-        required: false
-        type: string
-        default: "PipeRE-QA"
+      # target_org_alias:
+      #   description: "Target QA org alias for installation"
+      #   required: false
+      #   type: string
+      #   default: "PipeRE-QA"
       promotion:
         description: "Promote package version to Released after build"
         required: false
