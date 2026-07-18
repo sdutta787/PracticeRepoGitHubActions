@@ -5,13 +5,14 @@
 # Calculates the next package version number based on existing released versions.
 #
 # Version format: Major.Minor.Patch.Build
-# - Patch encodes the date (MMDD)
-# - Build increments for same-day builds
+# - Major.Minor are inherited from the latest released version
+# - Patch is always 0 (patch versioning requires Salesforce support enablement)
+# - Build uses NEXT to auto-increment
 #
 # Usage:
 #   ./scripts/calculate-version.sh <package_id> <devhub_username>
 #
-# Output: Version number string (e.g., "25.11.0711.1")
+# Output: Version number string (e.g., "1.0.0.NEXT")
 # =============================================================================
 
 set -euo pipefail
@@ -31,43 +32,19 @@ releaseListJSON=$(sf package version list \
   --json 2>/dev/null)
 
 packageVersionListResultArrayLastItemVersion=$(echo "$releaseListJSON" | jq -r '.result[-1].Version // empty')
-latestVersionReleaseState=$(echo "$releaseListJSON" | jq -r '.result[-1].ReleaseState // empty')
 
 if [ -z "$packageVersionListResultArrayLastItemVersion" ]; then
-  echo "No existing versions found. Starting from 1.0.0.0" >&2
-  todayYYMM="$(date +%y)$(date +%m)"
-  todayDay="$(date +%-d)"
-  echo "1.0.${todayYYMM}${todayDay}.1"
+  echo "No existing versions found. Starting from 1.0.0.NEXT" >&2
+  echo "1.0.0.NEXT"
   exit 0
 fi
 
-echo "Latest Version: $packageVersionListResultArrayLastItemVersion" >&2
-echo "Latest Release State: $latestVersionReleaseState" >&2
+echo "Latest Released Version: $packageVersionListResultArrayLastItemVersion" >&2
 
-latestMajorAndMinorVersion=$(
-  echo "$packageVersionListResultArrayLastItemVersion" \
-    | jq -rR 'split(".")[0:2] | join(".")'
-)
+MAJOR=$(echo "$packageVersionListResultArrayLastItemVersion" | jq -rR 'split(".")[0]')
+MINOR=$(echo "$packageVersionListResultArrayLastItemVersion" | jq -rR 'split(".")[1]')
 
-majorMinor="${latestMajorAndMinorVersion}"
-patch="${packageVersionListResultArrayLastItemVersion}" 
-patch=$(echo "$patch" | jq -rR 'split(".")[2]')
-
-todayYYMM="$(date +%y)$(date +%m)"
-todayDay="$(date +%-d)"
-
-dayPart="${patch%??}"
-buildPart="${patch: -2}"
-
-# Construct today's expected patch prefix
-todayPatchPrefix="${todayYYMM}${todayDay}"
-
-if [ "$dayPart" == "$todayPatchPrefix" ] || [ "$patch" == "${todayPatchPrefix}${buildPart}" ]; then
-  newBuild=$(printf "%02d" $((10#$buildPart + 1)))
-  newVersion="${majorMinor}.${todayPatchPrefix}${newBuild}"
-else
-  newVersion="${majorMinor}.${todayPatchPrefix}01"
-fi
+newVersion="${MAJOR}.${MINOR}.0.NEXT"
 
 echo "Calculated Version: $newVersion" >&2
 echo "$newVersion"
