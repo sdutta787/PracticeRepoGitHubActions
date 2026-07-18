@@ -1,5 +1,8 @@
 public with sharing class AccountService {
 
+    public static final String NAMESPACE = '__NAMESPACE__';
+    public static final String NAMESPACE_PREFIX = '__NAMESPACE_PREFIX__';
+
     public static Account createAccount(String name, String industry) {
         if (String.isBlank(name)) {
             throw new AccountServiceException('Account name cannot be blank');
