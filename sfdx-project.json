@@ -7,6 +7,14 @@
       "default": true,
       "package": "PipeRE",
       "versionDescription": ""
+    },
+    {
+      "versionName": "ver 0.1",
+      "versionNumber": "0.1.0.NEXT",
+      "path": "force-app",
+      "default": false,
+      "package": "PipeRE-Unlocked",
+      "versionDescription": ""
     }
   ],
   "name": "Practice GithubActions",
@@ -14,6 +22,7 @@
   "sfdcLoginUrl": "https://login.salesforce.com",
   "sourceApiVersion": "66.0",
   "packageAliases": {
-    "PipeRE": "0Hog50000000vmHCAQ"
+    "PipeRE": "0Hog50000000vmHCAQ",
+    "PipeRE-Unlocked": "0Hog50000000vntCAA"
   }
 }

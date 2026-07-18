@@ -3,6 +3,14 @@ name: PipeRE Build Automation
 on:
   workflow_dispatch:
     inputs:
+      package_type:
+        description: "Which package to build"
+        required: false
+        type: choice
+        default: "Managed"
+        options:
+          - "Managed"
+          - "Unlocked"
       skip_namespace_replacement:
         description: "Skip namespace replacement step"
         required: false
@@ -51,7 +59,6 @@ on:
 env:
   SF_AUTOUPDATE_DISABLE: true
   SF_USE_GENERIC_UNIX_KEYCHAIN: true
-  PACKAGE_ID: ${{ vars.PIPERE_PACKAGE_ID }}
   DEVHUB_USERNAME: ${{ vars.SF_DEVHUB_USERNAME }}
   QA_USERNAME: ${{ vars.SF_QA_USERNAME }}
 
@@ -65,6 +72,17 @@ jobs:
       install_url: ${{ steps.create_package.outputs.install_url }}
 
     steps:
+      - name: Resolve Package ID
+        id: resolve_pkg
+        run: |
+          if [ "${{ github.event.inputs.package_type }}" == "Unlocked" ]; then
+            echo "package_id=${{ vars.PIPERE_UNLOCKED_PACKAGE_ID }}" >> "$GITHUB_OUTPUT"
+            echo "Selected Unlocked package: ${{ vars.PIPERE_UNLOCKED_PACKAGE_ID }}"
+          else
+            echo "package_id=${{ vars.PIPERE_PACKAGE_ID }}" >> "$GITHUB_OUTPUT"
+            echo "Selected Managed package: ${{ vars.PIPERE_PACKAGE_ID }}"
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -227,6 +245,7 @@ jobs:
         id: calc_version
         run: |
           chmod +x ./scripts/calculate-version.sh
+          PACKAGE_ID="${{ steps.resolve_pkg.outputs.package_id }}"
           VERSION=$(./scripts/calculate-version.sh "$PACKAGE_ID" "$DEVHUB_USERNAME")
           echo "version_number=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Calculated version: $VERSION"
@@ -242,7 +261,7 @@ jobs:
           fi
 
           BUILD_RESULT=$(sf package version create \
-            --package "$PACKAGE_ID" \
+            --package "${{ steps.resolve_pkg.outputs.package_id }}" \
             --installation-key-bypass \
             --wait 60 \
             --version-number "${{ steps.calc_version.outputs.version_number }}" \
