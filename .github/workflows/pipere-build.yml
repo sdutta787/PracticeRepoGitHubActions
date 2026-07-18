@@ -146,15 +146,11 @@ jobs:
           if [ -d "delta/force-app/main/default/classes" ]; then
             for cls_file in delta/force-app/main/default/classes/*Test*.cls delta/force-app/main/default/classes/*_Test.cls; do
               CLASS_NAME=$(basename "$cls_file" .cls)
-              if [ -n "$TEST_CLASSES" ]; then
-                TEST_CLASSES="${TEST_CLASSES},${CLASS_NAME}"
-              else
-                TEST_CLASSES="${CLASS_NAME}"
-              fi
+              TEST_CLASSES="${TEST_CLASSES} ${CLASS_NAME}"
             done
           fi
 
-          if [ -z "$TEST_CLASSES" ]; then
+          if [ -z "$(echo "$TEST_CLASSES" | xargs)" ]; then
             echo "No Apex test classes found in delta. Scanning for related tests..."
 
             for cls_file in delta/force-app/main/default/classes/*.cls; do
@@ -162,17 +158,13 @@ jobs:
 
               for test_pattern in "${CLASS_NAME}Test" "${CLASS_NAME}_Test" "Test${CLASS_NAME}"; do
                 if [ -f "force-app/main/default/classes/${test_pattern}.cls" ]; then
-                  if [ -n "$TEST_CLASSES" ]; then
-                    TEST_CLASSES="${TEST_CLASSES},${test_pattern}"
-                  else
-                    TEST_CLASSES="${test_pattern}"
-                  fi
+                  TEST_CLASSES="${TEST_CLASSES} ${test_pattern}"
                 fi
               done
             done
           fi
 
-          TEST_CLASSES=$(echo "$TEST_CLASSES" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+          TEST_CLASSES=$(echo "$TEST_CLASSES" | xargs -n1 | sort -u | xargs)
 
           echo "test_classes=$TEST_CLASSES" >> "$GITHUB_OUTPUT"
 
@@ -195,7 +187,7 @@ jobs:
             --target-org DevHub \
             --dry-run \
             --test-level RunSpecifiedTests \
-            --tests "$TEST_CLASSES" \
+            --tests $TEST_CLASSES \
             --wait 30
 
           echo "All Apex tests passed."
