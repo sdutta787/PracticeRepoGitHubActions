@@ -1,0 +1,72 @@
+name: Salesforce Validation
+
+on:
+  
+  pull_request:
+    branches:
+      - 'main'
+
+jobs:
+  validate_sf_deployment:
+    runs-on: ubuntu-latest
+    steps:
+      # Install Salesforce CLI
+      - name: "Install Salesforce CLI"
+        run: |
+          npm install @salesforce/cli --location=global
+          nodeInstallPath=$(npm config get prefix)
+          echo "$nodeInstallPath/bin" >> $GITHUB_PATH
+          npm fund
+          sf --version
+      # Install SGD Plugin
+      - name: "Install SGD Plugin"
+        # run: "sf plugins install sfdx-git-delta --help"
+        run: |
+          echo y | sf plugins install sfdx-git-delta
+          sfdx plugins
+      # Install utilities
+      - name: Install utilities
+        run: |
+         pip install yq
+         xq --version
+      # Checkout the code in the pull request
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Authenticate to target org
+      - name: "Authenticate to Org"
+        env:
+          TEST_SECRET: ${{ secrets.SFDXAUTHURL}}
+        run: |
+          echo "$TEST_SECRET" > ./SFDX_URL.txt
+          sf org login sfdx-url --set-default -f ./SFDX_URL.txt
+          sf org list
+      # Delta deploy
+      - name: "Delta deploy"
+        run: |
+          sf sgd source delta --to "HEAD" --from "origin/main" --output-dir "." -i .forceignore
+          echo "--- package.xml generated with added and modified metadata ---"
+          cat package/package.xml
+          echo
+
+          HAS_TYPES=$(xq . < package/package.xml | jq 'has("Package") and (.Package | has("types"))' -r)
+          if [ "$HAS_TYPES" != "true" ]; then
+            echo "No metadata changes detected in delta. Skipping deployment."
+            exit 0
+          fi
+
+          echo "--- Apex Class Presence Check ---"
+          export APEX_CLASSES=$(xq . < package/package.xml | jq '.Package.types | [.] | flatten | map(select(.name=="ApexClass")) | .[] | .members | [.] | flatten | map(select(. | index("*") | not)) | unique | join(" ")' -r)
+          echo $APEX_CLASSES
+          echo
+          echo "--- Apex Tests to be executed ---"
+          export APEX_TEST_CLASSES=$(xq . < package/package.xml | jq '.Package.types | [.] | flatten | map(select(.name=="ApexClass")) | .[] | .members | [.] | flatten | map(select(. | index("*") | not)) | unique |map(select(. | endswith("Test") != true | not )) | join(" ")' -r)
+          echo $APEX_TEST_CLASSES
+          echo
+          echo "--- Delta Deploy ---"
+          if [ "$APEX_CLASSES" ]; then
+              sf project deploy start --dry-run -x package/package.xml -w 30 -l RunSpecifiedTests --tests $APEX_TEST_CLASSES -c --verbose
+            else
+              sf project deploy start --dry-run -x package/package.xml -w 30
+            fi
