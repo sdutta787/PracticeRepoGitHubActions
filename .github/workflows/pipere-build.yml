@@ -13,11 +13,19 @@ on:
       #   required: false
       #   type: string
       #   default: "PipeRE-QA"
-      promotion:
-        description: "Promote package version to Released after build"
+      release_type:
+        description: "Package version release type"
+        required: false
+        type: choice
+        default: "Beta"
+        options:
+          - "Beta"
+          - "Released"
+      skip_ancestor_check:
+        description: "Skip ancestor version validation (use with caution)"
         required: false
         type: boolean
-        default: true
+        default: false
       delta_scope:
         description: "How far back to check for changes (for Apex tests)"
         required: false
@@ -228,12 +236,18 @@ jobs:
         run: |
           echo "Building package version ${{ steps.calc_version.outputs.version_number }}..."
 
+          ANCESTOR_FLAG=""
+          if [ "${{ github.event.inputs.skip_ancestor_check }}" == "true" ]; then
+            ANCESTOR_FLAG="--skip-ancestor-check"
+          fi
+
           BUILD_RESULT=$(sf package version create \
             --package "$PACKAGE_ID" \
             --installation-key-bypass \
             --wait 60 \
             --version-number "${{ steps.calc_version.outputs.version_number }}" \
             --code-coverage \
+            $ANCESTOR_FLAG \
             --target-dev-hub DevHub \
             --json 2>&1) || true
 
@@ -284,7 +298,7 @@ jobs:
           echo "Package version verified successfully."
 
       - name: Promote Package Version
-        if: ${{ github.event.inputs.promotion == 'true' }}
+        if: ${{ github.event.inputs.release_type == 'Released' }}
         run: |
           sf package version promote \
             --package "${{ steps.create_package.outputs.package_version_id }}" \
